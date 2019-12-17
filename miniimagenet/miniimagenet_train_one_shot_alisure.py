@@ -5,9 +5,9 @@ import scipy as sp
 import scipy.stats
 import numpy as np
 import torch.nn as nn
-import task_generator as tg
 import torch.nn.functional as F
 from alisuretool.Tools import Tools
+import task_generator_alisure as tg
 from torch.optim.lr_scheduler import StepLR
 
 
