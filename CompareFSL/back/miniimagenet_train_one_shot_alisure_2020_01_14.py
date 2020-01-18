@@ -2,6 +2,8 @@ import os
 import math
 import torch
 import random
+import scipy as sp
+import scipy.stats
 import numpy as np
 import torch.nn as nn
 from PIL import Image
@@ -264,6 +266,208 @@ class RelationNetwork(nn.Module):
     pass
 
 
+# Original 1 --> MaxPool, FC input
+class CNNEncoder1(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(3, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU())
+        self.layer2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU())
+        self.layer3 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer4 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out3 = self.layer3(out2)
+        out4 = self.layer4(out3)
+        return out4, {"x": x, "out1": out1, "out2": out2, "out3": out3, "out4": out4} if is_summary else None
+
+    pass
+
+
+class RelationNetwork1(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(128, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.fc1 = nn.Linear(64 * 5 * 5, 64)  # 64
+        self.fc2 = nn.Linear(64, 1)  # 64
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out = out2.view(out2.size(0), -1)
+        out = torch.relu(self.fc1(out))
+        out = torch.sigmoid(self.fc2(out))
+        return out, {"x": x, "out1": out1, "out2": out2} if is_summary else None
+
+    pass
+
+
+# Original 2
+class CNNEncoder2(nn.Module):
+
+    def __init__(self, avg_pool_stripe=5):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(3, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU())
+        self.layer4 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=0), nn.BatchNorm2d(
+            64, momentum=1, affine=True), nn.ReLU(), nn.AvgPool2d(avg_pool_stripe))
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out3 = self.layer3(out2)
+        out4 = self.layer4(out3)
+        return out4, {"x": x, "out1": out1, "out2": out2, "out3": out3, "out4": out4} if is_summary else None
+
+    pass
+
+
+class RelationNetwork2(nn.Module):
+
+    def __init__(self, input_size):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 64)
+        self.fc4 = nn.Linear(64, 1)
+        pass
+
+    def forward(self, x, is_summary=False):
+        out = x.view(x.size(0), -1)
+        out = torch.relu(self.fc1(out))
+        out = torch.relu(self.fc2(out))
+        out = torch.relu(self.fc3(out))
+        # out = torch.sigmoid(self.fc4(out))
+        out = self.fc4(out)
+        return out, {"x": x} if is_summary else None
+
+    pass
+
+
+##############################################################################################################
+
+# dilation 2 module
+class CNNEncoderMy2(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(3, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU())
+        self.layer41 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=3, padding=1, dilation=1),
+                                     nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU())
+        self.layer42 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=3, padding=2, dilation=2),
+                                     nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU())
+        self.layer43 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=3, padding=3, dilation=3),
+                                     nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU())
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out3 = self.layer3(out2)
+        out41 = self.layer41(out3)
+        out42 = self.layer42(out3)
+        out43 = self.layer43(out3)
+        return out41, out42, out43, {"x": x, "out1": out1, "out2": out2, "out3": out3,
+                                     "out41": out41, "out42": out42, "out43": out43} if is_summary else None
+
+    pass
+
+
+class RelationNetworkMy2(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(32 * 2 * 3 * 3, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(64, momentum=1, affine=True), nn.ReLU(), nn.AdaptiveAvgPool2d(3))
+        self.fc1 = nn.Linear(64 * 3 * 3, 8)
+        self.fc2 = nn.Linear(8, 1)
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out = out2.view(out2.size(0), -1)
+        out = torch.relu(self.fc1(out))
+        out = torch.sigmoid(self.fc2(out))
+        return out, {"x": x, "out1": out1, "out2": out2} if is_summary else None
+
+    pass
+
+
+class CNNEncoderMy4(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(3, 16, kernel_size=3, padding=0),
+                                    nn.BatchNorm2d(16, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(16, 16, kernel_size=3, padding=0, dilation=1),
+                                    nn.BatchNorm2d(16, momentum=1, affine=True), nn.ReLU())
+        self.layer3 = nn.Sequential(nn.Conv2d(16, 32, kernel_size=3, padding=0, dilation=2),
+                                    nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU())
+        self.layer4 = nn.Sequential(nn.Conv2d(32, 32, kernel_size=3, padding=0, dilation=3),
+                                    nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU())
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out3 = self.layer3(out2)
+        out4 = self.layer4(out3)
+        return out4, {"x": x, "out1": out1, "out2": out2, "out3": out3, "out4": out4} if is_summary else None
+
+    pass
+
+
+class RelationNetworkMy4(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.layer1 = nn.Sequential(nn.Conv2d(64, 32, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer2 = nn.Sequential(nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU(), nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(nn.Conv2d(32, 32, kernel_size=3, padding=1),
+                                    nn.BatchNorm2d(32, momentum=1, affine=True), nn.ReLU(), nn.AdaptiveAvgPool2d(4))
+        self.fc1 = nn.Linear(32 * 4 * 4, 32)
+        self.fc2 = nn.Linear(32, 1)
+        pass
+
+    def forward(self, x, is_summary=False):
+        out1 = self.layer1(x)
+        out2 = self.layer2(out1)
+        out3 = self.layer3(out2)
+        out = out3.view(out3.size(0), -1)
+        out = torch.relu(self.fc1(out))
+        out = torch.sigmoid(self.fc2(out))
+        return out, {"x": x, "out1": out1, "out2": out2} if is_summary else None
+
+    pass
+
+
 ##############################################################################################################
 
 
@@ -412,6 +616,115 @@ class Runner(object):
 
         return relations, other_sample_features, other_batch_features, other_relation_features
 
+    # Original 2
+    def compare_fsl_2(self, samples, batches):
+        # features
+        sample_features, other_sample_features = self.feature_encoder(samples.cuda(), self.is_summary)  # 5x64*19*19
+        batch_features, other_batch_features = self.feature_encoder(batches.cuda(), self.is_summary)  # 75x64*19*19
+
+        # size
+        sample_batch_size, feature_channel, feature_width, feature_height = sample_features.shape
+        batch_batch_size = batch_features.shape[0]
+        wxh = feature_width * feature_height
+
+        # 配对
+        sample_features_ext = sample_features.unsqueeze(0).repeat(batch_batch_size, 1, 1, 1, 1)
+        batch_features_ext = batch_features.unsqueeze(0).repeat(self.sample_num_per_class * self.class_num, 1, 1, 1, 1)
+        batch_features_ext = torch.transpose(batch_features_ext, 0, 1)
+
+        # 变换形状
+        sample_features_ext = sample_features_ext.view(batch_batch_size, sample_batch_size, feature_channel, -1)
+        sample_features_ext = sample_features_ext.view(-1, feature_channel, sample_features_ext.shape[-1])
+        batch_features_ext = batch_features_ext.view(batch_batch_size, sample_batch_size, feature_channel, -1)
+        batch_features_ext = batch_features_ext.reshape(-1, feature_channel, batch_features_ext.shape[-1])
+
+        # 准备两两特征
+        sample_features_ext = sample_features_ext.unsqueeze(2).repeat(1, 1, wxh, 1)
+        batch_features_ext = torch.transpose(batch_features_ext.unsqueeze(2).repeat(1, 1, wxh, 1), 2, 3)
+
+        # 求余弦相似度
+        relation_pairs = torch.cosine_similarity(sample_features_ext, batch_features_ext, dim=1)
+        relation_pairs = relation_pairs.view(-1, wxh * wxh)
+
+        # 计算关系得分
+        relations, other_relation_features = self.relation_network(relation_pairs, self.is_summary)
+        relations = relations.view(-1, self.class_num * self.sample_num_per_class)
+
+        return relations, other_sample_features, other_batch_features, other_relation_features
+
+    # Original 2
+    def compare_fsl_3(self, samples, batches):
+        # features
+        sample_features, other_sample_features = self.feature_encoder(samples.cuda(), self.is_summary)  # 5x64*19*19
+        batch_features, other_batch_features = self.feature_encoder(batches.cuda(), self.is_summary)  # 75x64*19*19
+
+        # size
+        sample_batch_size, feature_channel, feature_width, feature_height = sample_features.shape
+        batch_batch_size = batch_features.shape[0]
+        wxh = feature_width * feature_height
+
+        sample_features = sample_features.view(sample_batch_size, feature_channel, -1)
+        batch_features = batch_features.view(batch_batch_size, feature_channel, -1)
+
+        # 配对
+        sample_features_ext = sample_features.unsqueeze(0).repeat(batch_batch_size, 1, 1, 1)
+        batch_features_ext = batch_features.unsqueeze(0).repeat(self.sample_num_per_class * self.class_num, 1, 1, 1)
+        batch_features_ext = torch.transpose(batch_features_ext, 0, 1)
+
+        # 变换形状
+        sample_features_ext = sample_features_ext.view(-1, feature_channel, wxh)
+        batch_features_ext = batch_features_ext.reshape(-1, feature_channel, wxh)
+        batch_features_ext = torch.transpose(batch_features_ext, 1, 2)
+
+        # 求余弦相似度
+        relation_pairs = torch.matmul(batch_features_ext, sample_features_ext)
+        relation_pairs = relation_pairs.view(-1, wxh * wxh)
+
+        # 计算关系得分
+        relations, other_relation_features = self.relation_network(relation_pairs, self.is_summary)
+        relations = relations.view(-1, self.class_num * self.sample_num_per_class)
+
+        return relations, other_sample_features, other_batch_features, other_relation_features
+
+    # dilation
+    def compare_fsl_4(self, samples, batches):
+        # features
+        all_sample_features = self.feature_encoder(samples.cuda(), self.is_summary)  # 5x64*19*19
+        sample_features_all, other_sample_features = all_sample_features[: -1], all_sample_features[-1]
+
+        all_batch_features = self.feature_encoder(batches.cuda(), self.is_summary)  # 75x64*19*19
+        batch_features_all, other_batch_features = all_batch_features[: -1], all_batch_features[-1]
+
+        batch_size, feature_dim, feature_width, feature_height = batch_features_all[0].shape
+
+        sample_features_all_ext = []
+        batch_features_all_ext = []
+        sample_features_all = [sample_features_all[0], sample_features_all[0], sample_features_all[0],
+                               sample_features_all[1], sample_features_all[1], sample_features_all[1],
+                               sample_features_all[2], sample_features_all[2], sample_features_all[2]]
+        batch_features_all = [batch_features_all[0], batch_features_all[1], batch_features_all[2],
+                              batch_features_all[0], batch_features_all[1], batch_features_all[2],
+                              batch_features_all[0], batch_features_all[1], batch_features_all[2]]
+        for sample_features, batch_features in zip(sample_features_all, batch_features_all):
+            # calculate relations
+            sample_features_ext = sample_features.unsqueeze(0).repeat(batch_size, 1, 1, 1, 1)
+            batch_features_ext = batch_features.unsqueeze(0).repeat(
+                self.sample_num_per_class * self.class_num, 1, 1, 1, 1)
+            batch_features_ext = torch.transpose(batch_features_ext, 0, 1)
+            sample_features_all_ext.append(sample_features_ext)
+            batch_features_all_ext.append(batch_features_ext)
+            pass
+
+        sample_features_all_ext = torch.cat(sample_features_all_ext, 2)
+        batch_features_all_ext = torch.cat(batch_features_all_ext, 2)
+        relation_pairs = torch.cat((sample_features_all_ext, batch_features_all_ext),
+                                   2).view(-1, feature_dim * 2 * 3 * 3, feature_width, feature_height)
+
+        relations, other_relation_features = self.relation_network(relation_pairs, self.is_summary)
+        relations = relations.view(-1, self.class_num * self.sample_num_per_class)
+
+        return relations, other_sample_features, other_batch_features, other_relation_features
+
     def train(self):
         Tools.print()
         Tools.print("Training...")
@@ -473,8 +786,8 @@ class Runner(object):
             if (episode + 1) % self.val_freq == 0:
                 Tools.print()
                 Tools.print("Valing...")
-                train_accuracy = runner.val_train(episode, is_print=True)
-                val_accuracy = self.val(episode, is_print=True)
+                train_accuracy, train_h = runner.val_train(episode, is_print=True)
+                val_accuracy, val_h = self.val(episode, is_print=True)
 
                 if val_accuracy > self.best_accuracy:
                     self.best_accuracy = val_accuracy
@@ -498,6 +811,14 @@ class Runner(object):
         pass
 
     def _val(self, folders, sampler_test, all_episode, episode=-1):
+
+        def mean_confidence_interval(data, confidence=0.95):
+            a = 1.0 * np.array(data)
+            n = len(a)
+            m, se = np.mean(a), scipy.stats.sem(a)
+            h = se * sp.stats.t._ppf((1 + confidence) / 2., n - 1)
+            return m, h
+
         accuracies = []
         for i in range(all_episode):
             total_rewards = 0
@@ -515,9 +836,12 @@ class Runner(object):
                 # calculate features
                 relations, other_sample_features, other_batch_features, other_relation_features = self.compare_fsl_fn(
                     self, samples, batches)
+
                 # 可视化
-                self._feature_vision(other_sample_features, other_batch_features, other_relation_features,
-                                     episode if episode > 0 else -episode, is_vision=False if episode > 0 else True)
+                is_vision = False if episode > 0 else True
+                episode = episode if episode > 0 else -episode
+                self._feature_vision(other_sample_features, other_batch_features,
+                                     other_relation_features, episode, is_vision=is_vision)
                 ###########################################################################
 
                 _, predict_labels = torch.max(relations.data, 1)
@@ -528,34 +852,38 @@ class Runner(object):
                 counter += batch_size
                 pass
 
-            accuracies.append(total_rewards / 1.0 / counter)
+            accuracy = total_rewards / 1.0 / counter
+            accuracies.append(accuracy)
             pass
-        return np.mean(np.array(accuracies, dtype=np.float))
+
+        accuracy, h = mean_confidence_interval(accuracies)
+        return accuracy, h
 
     def val_train(self, episode, is_print=True):
-        val_train_accuracy = self._val(self.folders_train, sampler_test=False,
-                                       all_episode=self.val_episode, episode=episode)
+        val_train_accuracy, h = self._val(self.folders_train, sampler_test=False,
+                                          all_episode=self.val_episode, episode=episode)
         if is_print:
-            Tools.print("Val Train Accuracy: {}".format(val_train_accuracy))
+            Tools.print("Val Train Accuracy: {}, H: {}".format(val_train_accuracy, h))
             pass
-        return val_train_accuracy
+        return val_train_accuracy, h
 
     def val(self, episode, is_print=True):
-        val_accuracy = self._val(self.folders_val, sampler_test=False, all_episode=self.val_episode, episode=episode)
+        val_accuracy, h = self._val(self.folders_val, sampler_test=False,
+                                    all_episode=self.val_episode, episode=episode)
         if is_print:
-            Tools.print("Val Accuracy: {}".format(val_accuracy))
+            Tools.print("Val Accuracy: {}, H: {}".format(val_accuracy, h))
             pass
-        return val_accuracy
+        return val_accuracy, h
 
     def test(self):
         Tools.print()
         Tools.print("Testing...")
         total_accuracy = 0.0
         for episode in range(self.test_avg_num):
-            test_accuracy = self._val(self.folders_test, sampler_test=True, all_episode=self.test_episode)
+            test_accuracy, h = self._val(self.folders_test, sampler_test=True, all_episode=self.test_episode)
             total_accuracy += test_accuracy
-            Tools.print("episode={}, Test accuracy={}, Total accuracy={}".format(
-                episode, test_accuracy, total_accuracy))
+            Tools.print("episode={}, Test accuracy={}, H={}, Total accuracy={}".format(
+                episode, test_accuracy, h, total_accuracy))
             pass
 
         final_accuracy = total_accuracy / self.test_avg_num
@@ -577,17 +905,54 @@ if __name__ == '__main__':
 
     _model_name = "1"
     if _model_name == "1":
-        # 0.7015 / 0.50013
+        # 0.7547 / 0.4884  - 0.5855 / 0.4600
         _feature_encoder = CNNEncoder()
         _relation_network = RelationNetwork()
         _compare_fsl_fn = Runner.compare_fsl_1
         _model_name = "1"
+    elif _model_name == "5":
+        # 0.8125 / 0.5215 / 0.5177 - 0.648 / 0.470
+        _feature_encoder = CNNEncoder1()
+        _relation_network = RelationNetwork1()
+        _compare_fsl_fn = Runner.compare_fsl_1
+        _model_name = "1219_5_lr"
+    elif _model_name == "2":
+        # 0.6432 / 0.4975
+        _feature_encoder = CNNEncoder2()
+        _relation_network = RelationNetwork2(9 * 9)
+        _compare_fsl_fn = Runner.compare_fsl_2
+        _model_name = "1218_2_lr"
+    elif _model_name == "3":
+        # 0.6208 / 0.4928
+        _feature_encoder = CNNEncoder2()
+        _relation_network = RelationNetwork2(9 * 9)
+        _compare_fsl_fn = Runner.compare_fsl_3
+        _model_name = "1218_3_lr"
+    elif _model_name == "4":
+        # 0.6168 / 0.4915
+        _avg_pool_stripe = 3
+        _feature_encoder = CNNEncoder2(avg_pool_stripe=_avg_pool_stripe)
+        _relation_network = RelationNetwork2(np.power(15 // _avg_pool_stripe, 4))
+        _compare_fsl_fn = Runner.compare_fsl_3
+        _model_name = "1218_4_lr"
+    elif _model_name == "7":  # dilation 2 module
+        # 0.5998 / 0.4535   -   0.8681 / 0.4998
+        _feature_encoder = CNNEncoderMy2()
+        _relation_network = RelationNetworkMy2()
+        _compare_fsl_fn = Runner.compare_fsl_4
+        _model_name = "1224_7_lr"
+    elif _model_name == "9":
+        # 0.645 / 0.4500
+        _feature_encoder = CNNEncoderMy4()
+        _relation_network = RelationNetworkMy4()
+        _compare_fsl_fn = Runner.compare_fsl_1
+        _model_name = "1221_9_lr"
     else:
         raise Exception("...............")
 
     Tools.print("{}".format(_model_name))
-    # _summary_dir = Tools.new_dir("../log/{}".format(_model_name))
-    _summary_dir = None
+    _summary_dir = Tools.new_dir("../log/{}".format(_model_name))
+    # _summary_dir = None
 
     runner = Runner(model_name=_model_name, feature_encoder=_feature_encoder, relation_network=_relation_network,
                     compare_fsl_fn=_compare_fsl_fn, train_episode=300000, is_load_data=False,
@@ -596,7 +961,9 @@ if __name__ == '__main__':
     runner.load_model()
 
     # runner.test()
+    runner.val_train(episode=-1)
+    runner.val(episode=-2)
     # runner.train()
-    runner.val_train(episode=runner.train_episode)
-    runner.val(episode=runner.train_episode)
-    runner.test()
+    # runner.val_train(episode=runner.train_episode)
+    # runner.val(episode=runner.train_episode)
+    # runner.test()
